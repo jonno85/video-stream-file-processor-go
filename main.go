@@ -91,21 +91,20 @@ func main() {
 	}
 
 	// Instantiate external clients
-	redisClient := clients.NewRedisClientImpl()
-	s3Client := clients.NewMinioClient()
-
+	clients := config.NewAppClients()
+	
 	// Ensure S3 bucket exists
-	ensureS3Bucket(s3Client, streamProcessorConfig.S3Bucket)
+	ensureS3Bucket(clients.S3Client, streamProcessorConfig.S3Bucket)
 
 	// Instantiate services
-	pathWatcher := service.NewPathWatcher(streamProcessorConfig, redisClient)
-	videoFileProcessorService := service.NewVideoFileProcessorService(streamProcessorConfig, s3Client, redisClient)
+	pathWatcher := service.NewPathWatcher(streamProcessorConfig, clients.RedisClient)
+	videoFileProcessorService := service.NewVideoFileProcessorService(streamProcessorConfig, clients)
 
 	// Run background tasks (sequentially for clarity)
 	runBackgroundTasks(videoFileProcessorService, pathWatcher)
 
 	// Set up HTTP server
-	server := setupHTTPServer(redisClient, pathWatcher)
+	server := setupHTTPServer(clients.RedisClient, pathWatcher)
 
 	// Channel to listen for interrupt or terminate signals
 	quit := make(chan os.Signal, 1)
@@ -119,5 +118,5 @@ func main() {
 	}()
 
 	<-quit
-	gracefulShutdown(server, redisClient)
+	gracefulShutdown(server, clients.RedisClient)
 }
