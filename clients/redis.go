@@ -82,7 +82,7 @@ func (r *RedisClientImpl) Enqueue(ctx context.Context, key FileName, metadata []
 		if err := pipe.LPush(ctx, QueueNew, key).Err(); err != nil {
 			return err
 		}
-		slog.Info("Enqueued", "key", key)
+		slog.Debug("Enqueued", "key", key)
 		jsonBytes, err := json.Marshal(metadata)
 		if err != nil {
 				return err // handle marshal error
@@ -91,7 +91,7 @@ func (r *RedisClientImpl) Enqueue(ctx context.Context, key FileName, metadata []
 		if err := pipe.Set(ctx, key, jsonBytes, TTL_INFINITE).Err(); err != nil {
 			return err
 		}
-		slog.Info("Set metadata", "key", key)
+		slog.Debug("Set metadata", "key", key)
 		return nil
 	})
 	slog.Info("Enqueued", "key", key, "err", err)
@@ -112,15 +112,15 @@ func (r *RedisClientImpl) DequeueCompleted(ctx context.Context, key FileName) er
 		if err := pipe.LRem(ctx, QueueInProgress, 1, key).Err(); err != nil {
 			return err
 		}
-		slog.Info("LRem", "key", key)
+		slog.Debug("LRem", "key", key)
 		if err := pipe.LPush(ctx, QueueCompleted, key).Err(); err != nil {
 			return err
 		}
-		slog.Info("LPush", "key", key)
+		slog.Debug("LPush", "key", key)
 		if err := pipe.Del(ctx, key).Err(); err != nil {
 			return err
 		}
-		slog.Info("Del", "key", key)
+		slog.Debug("Del", "key", key)
 		return nil
 	})
 
@@ -140,7 +140,7 @@ func (r *RedisClientImpl) DelPathWatcher(ctx context.Context, key FilePath) erro
 }
 
 func (r *RedisClientImpl) SetMetadataFile(ctx context.Context, key FileName, metadata []MetadataFile) error {
-	slog.Info("SetMetadataFile", "key", key)
+	slog.Debug("SetMetadataFile", "key", key)
 	jsonBytes, err := json.Marshal(metadata)
 	if err != nil {
 			return err // handle marshal error
@@ -151,7 +151,7 @@ func (r *RedisClientImpl) SetMetadataFile(ctx context.Context, key FileName, met
 func (r *RedisClientImpl) GetMetadataFile(ctx context.Context, key FileName) ([]MetadataFile, error) {
 	var metadata []MetadataFile
 	jsonBytes, err := r.redisClient.Get(ctx, key).Bytes()
-	slog.Info("GetMetadataFile", "key", key, "jsonBytes", jsonBytes)
+	slog.Debug("GetMetadataFile", "key", key, "jsonBytes", jsonBytes)
 	if err != nil {
 		return metadata, err
 	}

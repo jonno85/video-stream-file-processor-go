@@ -43,7 +43,7 @@ func runBackgroundTasks(videoFileProcessorService *service.VideoFileProcessorSer
 	go videoFileProcessorService.ProcessPendingQueue()
 
 	slog.Info("Running background: AddAndWatchPath")
-	pathWatcher.AddAndWatchPath("./input-videos")
+	pathWatcher.AddAndWatchPath(pathWatcher.StreamProcessorConfig.Path)
 
 	slog.Info("Running background: ProcessQueue")
 	go videoFileProcessorService.ProcessQueue()

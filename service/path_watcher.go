@@ -16,19 +16,13 @@ type FsPathWatcher = fsnotify.Watcher
 
 type PathWatcherService struct {
 	fsPathWatcher *FsPathWatcher
-	logger *slog.Logger
 	redisClient *clients.RedisClientImpl
 }
-
-// type ProcessorWorker struct {
-// 	pathWatcherService *PathWatcherService
-// 	// videoFileProcessor *VideoFileProcessor
-// }
 
 type PathWatcher struct {
 	watchers map[string]*PathWatcherService
 	redisClient *clients.RedisClientImpl
-	streamProcessorConfig config.StreamProcessorConfig
+	StreamProcessorConfig config.StreamProcessorConfig
 }
 
 type PathWatcherAction interface {
@@ -38,7 +32,7 @@ type PathWatcherAction interface {
 func (pw *PathWatcherService) AnalyseVideoFile(streamProcessorConfig config.StreamProcessorConfig) error{
 	info, err := os.Stat(streamProcessorConfig.Path)
 	if err != nil {
-		pw.logger.Error("Failed to stat file", "path", streamProcessorConfig.Path, "err", err)
+		slog.Error("Failed to stat file", "path", streamProcessorConfig.Path, "err", err)
 		return err
 	}
 	size := info.Size()
@@ -49,16 +43,19 @@ func (pw *PathWatcherService) AnalyseVideoFile(streamProcessorConfig config.Stre
 	
 	file, err := os.Open(streamProcessorConfig.Path)
 	if err != nil {
-		pw.logger.Error("Failed to open file", "path", streamProcessorConfig.Path, "err", err)
+		slog.Error("Failed to open file", "path", streamProcessorConfig.Path, "err", err)
 		return err
 	}
 	defer file.Close()
 	
 	chunks := size / int64(streamProcessorConfig.ChunkSize)
+	if size % int64(streamProcessorConfig.ChunkSize) != 0 {
+		chunks++
+	}
 	slog.Info("Processing video", "path", streamProcessorConfig.Path, "size", size, "chunks", chunks)
 
 	var metadataFiles []clients.MetadataFile
-	for i := 0; i <= int(chunks); i++ {
+	for i := range make([]struct{}, chunks) {
 		metadata := clients.MetadataFile{
 			ChunkProgressIndex: uint(i),
 			TotalChunks:       int(chunks),
@@ -83,12 +80,13 @@ func handleWatcherEvents(pathWatcherService *PathWatcherService, done chan bool)
 				slog.Info("event", "action", event.Op, "path", event.Name)
 				switch event.Op {
 				case fsnotify.Create:
-					slog.Info("new file created", "path", event.Name)
+					slog.Debug("new file created", "path", event.Name)
 					if strings.HasSuffix(event.Name, ".mp4") {
-						slog.Info("new video file detected", "path", event.Name)
+						slog.Debug("new video file detected", "path", event.Name)
 						
 						go pathWatcherService.AnalyseVideoFile(config.StreamProcessorConfig{	
 							Path: event.Name,
+							// TODO: use var
 							S3Bucket: "video-stream-bucket",
 							ChunkSize: config.DEFAULT_CHUNK_SIZE,
 							StreamTimeout: 30 * time.Second,
@@ -101,6 +99,8 @@ func handleWatcherEvents(pathWatcherService *PathWatcherService, done chan bool)
 					slog.Info("file removed", "path", event.Name)
 				case fsnotify.Rename:
 					slog.Info("file renamed", "path", event.Name)
+				default:
+					slog.Info("unknown event", "path", event.Name)
 				}
 			case err, ok := <-pathWatcherService.fsPathWatcher.Errors:
 				if !ok {
@@ -140,6 +140,6 @@ func NewPathWatcher(streamProcessorConfig config.StreamProcessorConfig, redisCli
 	return &PathWatcher{
 		watchers: make(map[string]*PathWatcherService),
 		redisClient: redisClient,
-		streamProcessorConfig: streamProcessorConfig,
+		StreamProcessorConfig: streamProcessorConfig,
 	}
 }
