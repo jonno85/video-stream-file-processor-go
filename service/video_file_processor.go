@@ -83,7 +83,7 @@ func (vfp *VideoFileProcessorService) processPendingVideo(fileName clients.FileN
 		return err
 	}
 
-	if metadata.ChunkProgressIndex >= uint(metadata.TotalChunks) {
+	if len(metadata) == 0 || metadata[0].ChunkProgressIndex >= uint(metadata[0].TotalChunks) {
 		slog.Info("All chunks processed", "fileName", fileName)
 		if err := vfp.redisClient.DequeueCompleted(context.Background(), fileName); err != nil {
 			return err
@@ -91,15 +91,15 @@ func (vfp *VideoFileProcessorService) processPendingVideo(fileName clients.FileN
 		return nil
 	}
 
-	file, err := os.Open(metadata.Path)
+	file, err := os.Open(metadata[0].Path)
 	if err != nil {
-		slog.Error("Failed to open file", "path", metadata.Path, "err", err)
+		slog.Error("Failed to open file", "path", metadata[0].Path, "err", err)
 		return err
 	}
 	defer file.Close()
 
 	if err := vfp.uploadChunks(metadata, file); err != nil {
-		slog.Error("Failed to upload chunk", "path", metadata.Path, "err", err)
+		slog.Error("Failed to upload chunk", "path", metadata[0].Path, "err", err)
 		return err
 	}
 
@@ -112,7 +112,7 @@ func (vfp *VideoFileProcessorService) cleanup(fileName clients.FileName) error {
 	if err != nil {
 		return err
 	}
-	if metadata.ChunkProgressIndex >= uint(metadata.TotalChunks) {
+	if len(metadata) >= int(metadata[0].TotalChunks) {
 		slog.Info("All chunks processed", "fileName", fileName)
 		if err := vfp.redisClient.DequeueCompleted(context.Background(), fileName); err != nil {
 			return err
@@ -120,16 +120,18 @@ func (vfp *VideoFileProcessorService) cleanup(fileName clients.FileName) error {
 		return nil
 	}
 
-	slog.Info("Some chunks missing", "fileName", fileName)
+	slog.Info("Some chunks missing", "fileName", fileName, "metadata", metadata)
 	return nil
 }
 
 // uploadChunks reads the file in chunks and uploads each chunk to S3.
-func (vfp *VideoFileProcessorService) uploadChunks(metadataFile clients.MetadataFile, file *os.File) error {
-	buffer := make([]byte, metadataFile.ChunkSize)
+func (vfp *VideoFileProcessorService) uploadChunks(metadataFiles []clients.MetadataFile, file *os.File) error {
+	buffer := make([]byte, metadataFiles[0].ChunkSize)
 	startTime := time.Now()
-	chunkIndex := metadataFile.ChunkProgressIndex
-	for ; chunkIndex <= uint(metadataFile.TotalChunks); chunkIndex++ {
+	chunkIndex := metadataFiles[0].ChunkProgressIndex
+	totalChunks := uint(metadataFiles[0].TotalChunks)
+	metadataFileInS3 := metadataFiles[0]
+	for ; chunkIndex <= totalChunks; chunkIndex++ {
 		bytesRead, err := file.Read(buffer)
 		if err != nil && err != io.EOF {
 			slog.Error("Error reading file chunk", "err", err)
@@ -143,10 +145,10 @@ func (vfp *VideoFileProcessorService) uploadChunks(metadataFile clients.Metadata
 			break
 		}
 		chunkData := buffer[:bytesRead]
-		chunkKey := vfp.makeChunkKey(metadataFile.Path, chunkIndex, uint(metadataFile.TotalChunks))
-		metadata := vfp.makeChunkMetadata(metadataFile, chunkIndex)
+		chunkKey := vfp.makeChunkKey(metadataFiles[chunkIndex].Path, chunkIndex, totalChunks)
+		metadata := vfp.makeChunkMetadata(metadataFiles[chunkIndex], chunkIndex)
 		// upload data to s3
-		info, err := vfp.s3Client.PutObject(context.Background(), metadataFile.S3Bucket, chunkKey, bytes.NewReader(chunkData), int64(bytesRead), minio.PutObjectOptions{
+		info, err := vfp.s3Client.PutObject(context.Background(), metadataFiles[chunkIndex].S3Bucket, chunkKey, bytes.NewReader(chunkData), int64(bytesRead), minio.PutObjectOptions{
 			ContentType:  "video/mp4",
 			UserMetadata: metadata,
 		})
@@ -155,18 +157,18 @@ func (vfp *VideoFileProcessorService) uploadChunks(metadataFile clients.Metadata
 			return err
 		}
 		slog.Info("Uploaded chunk to S3", "chunkKey", chunkKey, "info", info)
-		metadataFileUpdated := metadataFile
-		metadataFileUpdated.ChunkProgressIndex = chunkIndex + 1
-		if vfp.redisClient.SetMetadataFile(context.Background(), chunkKey, metadataFileUpdated) != nil {
+		metadataFileUpdated := metadataFiles[1:]
+		
+		if vfp.redisClient.SetMetadataFile(context.Background(), file.Name(), metadataFileUpdated) != nil {
 			slog.Error("Error setting chunk in Redis", "err", err)
 			return err
 		}
 		slog.Info("Processed chunk", "chunkIndex", chunkIndex, "bytesRead", bytesRead)
 	}
-	metadataFile.StreamDuration = time.Since(startTime)
-	metadataFile.UploadTime = time.Now()
-	metadataFile.ChunkProgressIndex = chunkIndex
-	if err := vfp.uploadMetadata(metadataFile); err != nil {
+	metadataFileInS3.StreamDuration = time.Since(startTime)
+	metadataFileInS3.UploadTime = time.Now()
+	metadataFileInS3.ChunkProgressIndex = chunkIndex
+	if err := vfp.uploadMetadata(metadataFileInS3); err != nil {
 		slog.Error("Error uploading metadata", "err", err)
 		return err
 	}

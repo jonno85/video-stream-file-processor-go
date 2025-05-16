@@ -57,15 +57,19 @@ func (pw *PathWatcherService) AnalyseVideoFile(streamProcessorConfig config.Stre
 	chunks := size / int64(streamProcessorConfig.ChunkSize)
 	slog.Info("Processing video", "path", streamProcessorConfig.Path, "size", size, "chunks", chunks)
 
-	metadata := clients.MetadataFile{
-		ChunkProgressIndex: 0,
-		TotalChunks: int(chunks),
-		ChunkSize: int(streamProcessorConfig.ChunkSize),
-		Path: streamProcessorConfig.Path,
-		S3Bucket: streamProcessorConfig.S3Bucket,
+	var metadataFiles []clients.MetadataFile
+	for i := 0; i <= int(chunks); i++ {
+		metadata := clients.MetadataFile{
+			ChunkProgressIndex: uint(i),
+			TotalChunks:       int(chunks),
+			ChunkSize:         int(streamProcessorConfig.ChunkSize),
+			Path:              streamProcessorConfig.Path,
+			S3Bucket:          streamProcessorConfig.S3Bucket,
+		}
+		metadataFiles = append(metadataFiles, metadata)
 	}
-
-	return pw.redisClient.Enqueue(context.Background(), streamProcessorConfig.Path, metadata)
+	
+	return pw.redisClient.Enqueue(context.Background(), streamProcessorConfig.Path, metadataFiles)
 }
 
 func handleWatcherEvents(pathWatcherService *PathWatcherService, done chan bool) {

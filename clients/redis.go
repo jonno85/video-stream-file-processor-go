@@ -32,15 +32,15 @@ type MetadataFile struct {
 }
 
 type RedisOperationalClient interface {
-	Enqueue(ctx context.Context, key FileName, metadata MetadataFile) error
+	Enqueue(ctx context.Context, key FileName, metadata []MetadataFile) error
 	DequeueInProgress(ctx context.Context) (FileName, error)
 	DequeueStaleFile(ctx context.Context) (FileName, error)
 	DequeueCompleted(ctx context.Context, key FileName) error
 	SetPathWatcher(ctx context.Context, key FilePath) error
 	GetPathWatcher(ctx context.Context, key FilePath) error
 	DelPathWatcher(ctx context.Context, key FilePath) error
-	SetMetadataFile(ctx context.Context, key FileName, metadata MetadataFile) error
-	GetMetadataFile(ctx context.Context, key FileName) (MetadataFile, error)
+	SetMetadataFile(ctx context.Context, key FileName, metadata []MetadataFile) error
+	GetMetadataFile(ctx context.Context, key FileName) ([]MetadataFile, error)
 	DelMetadataFile(ctx context.Context, key FileName) error
 	Close() error
 }
@@ -76,7 +76,7 @@ func NewRedisClientImpl() *RedisClientImpl {
 	}
 }
 
-func (r *RedisClientImpl) Enqueue(ctx context.Context, key FileName, metadata MetadataFile) error {
+func (r *RedisClientImpl) Enqueue(ctx context.Context, key FileName, metadata []MetadataFile) error {
 	_, err := r.redisClient.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		// 1. Push the key to the queue
 		if err := pipe.LPush(ctx, QueueNew, key).Err(); err != nil {
@@ -139,7 +139,7 @@ func (r *RedisClientImpl) DelPathWatcher(ctx context.Context, key FilePath) erro
 	return r.redisClient.Del(ctx, key).Err()
 }
 
-func (r *RedisClientImpl) SetMetadataFile(ctx context.Context, key FileName, metadata MetadataFile) error {
+func (r *RedisClientImpl) SetMetadataFile(ctx context.Context, key FileName, metadata []MetadataFile) error {
 	slog.Info("SetMetadataFile", "key", key)
 	jsonBytes, err := json.Marshal(metadata)
 	if err != nil {
@@ -148,8 +148,8 @@ func (r *RedisClientImpl) SetMetadataFile(ctx context.Context, key FileName, met
 	return r.redisClient.Set(ctx, key, jsonBytes, TTL_INFINITE).Err()
 }
 
-func (r *RedisClientImpl) GetMetadataFile(ctx context.Context, key FileName) (MetadataFile, error) {
-	var metadata MetadataFile
+func (r *RedisClientImpl) GetMetadataFile(ctx context.Context, key FileName) ([]MetadataFile, error) {
+	var metadata []MetadataFile
 	jsonBytes, err := r.redisClient.Get(ctx, key).Bytes()
 	slog.Info("GetMetadataFile", "key", key, "jsonBytes", jsonBytes)
 	if err != nil {
