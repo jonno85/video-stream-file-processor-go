@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/jonno85/video-stream-file-processor.git/clients"
-	"github.com/jonno85/video-stream-file-processor.git/config"
-	"github.com/jonno85/video-stream-file-processor.git/service"
+	"github.com/jonno85/video-stream-file-processor/internal/adapter"
+	"github.com/jonno85/video-stream-file-processor/internal/config"
+	"github.com/jonno85/video-stream-file-processor/internal/service"
 )
 
 type ProcessRequest struct {
@@ -15,8 +15,8 @@ type ProcessRequest struct {
 }
 
 type V1Handler struct {
-	RedisClient *clients.RedisClientImpl
-	PathWatcher *service.PathWatcher
+	RedisClient *adapter.RedisClientImpl
+	PathWatcher *service.PathWatcherAdmin
 }
 
 func (h *V1Handler) AddPathToWatch(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +45,11 @@ func (h *V1Handler) AddPathToWatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	h.PathWatcher.AddAndWatchPath(request.Path)
+	streamProcessorConfig := h.PathWatcher.StreamProcessorConfig
+	streamProcessorConfig.Path = request.Path
+	streamProcessorConfig.ChunkSize = uint64(request.ChunkSize)
+	
+	h.PathWatcher.AddAndWatchPath(streamProcessorConfig)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Path added to watchlist"))
@@ -63,12 +67,10 @@ func (h *V1Handler) RemovePathFromWatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if h.RedisClient.GetPathWatcher(r.Context(), request.Path) != nil {
-		http.Error(w, "Path is not available added", http.StatusNotFound)
+	if err := h.PathWatcher.DeleteWatchPath(request.Path); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	h.RedisClient.DelPathWatcher(r.Context(), request.Path)
 
 	w.WriteHeader(http.StatusNoContent)
 	w.Write([]byte("Path removed from watchlist"))

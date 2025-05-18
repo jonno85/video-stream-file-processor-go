@@ -22,6 +22,7 @@ services:
       - minio
     ports:
       - 8080:8080
+      - 2112:2112
 
   redis:
     image: redis:7-alpine

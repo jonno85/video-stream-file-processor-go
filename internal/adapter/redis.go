@@ -1,4 +1,4 @@
-package clients
+package adapter
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
-	"time"
 
+	"github.com/jonno85/video-stream-file-processor/internal/domain"
 	redis "github.com/redis/go-redis/v9"
 )
 
@@ -21,26 +21,16 @@ const (
 type FileName = string
 type FilePath = string
 
-type MetadataFile struct {
-	ChunkProgressIndex uint `json:"chunk_progress_index"`
-	TotalChunks int `json:"total_chunks"`
-	ChunkSize int `json:"chunk_size"`
-	Path string `json:"path"`
-	UploadTime time.Time `json:"upload_time"`
-	StreamDuration time.Duration `json:"stream_duration"`
-	S3Bucket string `json:"s3_bucket"`
-}
-
 type RedisOperationalClient interface {
-	Enqueue(ctx context.Context, key FileName, metadata []MetadataFile) error
+	Enqueue(ctx context.Context, key FileName, metadata domain.MetadataFile) error
 	DequeueInProgress(ctx context.Context) (FileName, error)
 	DequeueStaleFile(ctx context.Context) (FileName, error)
 	DequeueCompleted(ctx context.Context, key FileName) error
 	SetPathWatcher(ctx context.Context, key FilePath) error
 	GetPathWatcher(ctx context.Context, key FilePath) error
 	DelPathWatcher(ctx context.Context, key FilePath) error
-	SetMetadataFile(ctx context.Context, key FileName, metadata []MetadataFile) error
-	GetMetadataFile(ctx context.Context, key FileName) ([]MetadataFile, error)
+	SetMetadataFile(ctx context.Context, key FileName, metadata domain.MetadataFile) error
+	GetMetadataFile(ctx context.Context, key FileName) (domain.MetadataFile, error)
 	DelMetadataFile(ctx context.Context, key FileName) error
 	Close() error
 }
@@ -76,7 +66,7 @@ func NewRedisClientImpl() *RedisClientImpl {
 	}
 }
 
-func (r *RedisClientImpl) Enqueue(ctx context.Context, key FileName, metadata []MetadataFile) error {
+func (r *RedisClientImpl) Enqueue(ctx context.Context, key FileName, metadata domain.MetadataFile) error {
 	_, err := r.redisClient.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		// 1. Push the key to the queue
 		if err := pipe.LPush(ctx, QueueNew, key).Err(); err != nil {
@@ -94,7 +84,7 @@ func (r *RedisClientImpl) Enqueue(ctx context.Context, key FileName, metadata []
 		slog.Debug("Set metadata", "key", key)
 		return nil
 	})
-	slog.Info("Enqueued", "key", key, "err", err)
+	slog.Debug("Enqueued", "key", key, "err", err)
 	return err
 }
 
@@ -108,7 +98,7 @@ func (r *RedisClientImpl) DequeueStaleFile(ctx context.Context) (FileName, error
 
 func (r *RedisClientImpl) DequeueCompleted(ctx context.Context, key FileName) error {
 	_, err := r.redisClient.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		slog.Info("DequeueCompleted", "key", key)
+		slog.Debug("DequeueCompleted", "key", key)
 		if err := pipe.LRem(ctx, QueueInProgress, 1, key).Err(); err != nil {
 			return err
 		}
@@ -139,20 +129,26 @@ func (r *RedisClientImpl) DelPathWatcher(ctx context.Context, key FilePath) erro
 	return r.redisClient.Del(ctx, key).Err()
 }
 
-func (r *RedisClientImpl) SetMetadataFile(ctx context.Context, key FileName, metadata []MetadataFile) error {
+func (r *RedisClientImpl) SetMetadataFile(ctx context.Context, key FileName, metadata domain.MetadataFile) error {
 	slog.Debug("SetMetadataFile", "key", key)
 	jsonBytes, err := json.Marshal(metadata)
 	if err != nil {
 			return err // handle marshal error
 	}
-	return r.redisClient.Set(ctx, key, jsonBytes, TTL_INFINITE).Err()
+	if err := r.redisClient.Set(ctx, key, jsonBytes, TTL_INFINITE).Err(); err != nil {
+		return err
+	}
+	return err
 }
 
-func (r *RedisClientImpl) GetMetadataFile(ctx context.Context, key FileName) ([]MetadataFile, error) {
-	var metadata []MetadataFile
+func (r *RedisClientImpl) GetMetadataFile(ctx context.Context, key FileName) (domain.MetadataFile, error) {
+	var metadata domain.MetadataFile
 	jsonBytes, err := r.redisClient.Get(ctx, key).Bytes()
 	slog.Debug("GetMetadataFile", "key", key, "jsonBytes", jsonBytes)
 	if err != nil {
+		if err == redis.Nil {
+			return metadata, nil
+		}
 		return metadata, err
 	}
 	

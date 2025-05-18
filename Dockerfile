@@ -6,16 +6,17 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o app main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o app ./cmd/video-stream-file-processor/main.go
 
 # Final image
 FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /app/app ./app
-COPY --from=builder /app/config ./config
-COPY --from=builder /app/handlers ./handlers
-COPY --from=builder /app/service ./service
-COPY --from=builder /app/clients ./clients
-COPY --from=builder /app/middleware ./middleware
+COPY --from=builder /app/internal/config ./internal/config
+COPY --from=builder /app/internal/handlers ./internal/handlers
+COPY --from=builder /app/internal/service ./internal/service
+COPY --from=builder /app/internal/adapter ./internal/adapter
+COPY --from=builder /app/internal/middleware ./internal/middleware
+COPY --from=builder /app/metrics ./metrics
 EXPOSE 8080
 ENTRYPOINT ["./app"] 
