@@ -22,7 +22,7 @@ type FsPathWatcher = fsnotify.Watcher
 // PathWatcherService provides methods to watch a file system path and enqueue video files for processing.
 type PathWatcherService struct {
 	fsPathWatcher *FsPathWatcher
-	redisClient *adapter.RedisClientImpl
+	redisClient adapter.RedisOperationalClient
 	done chan bool
 }
 
@@ -34,7 +34,7 @@ type PathWatcherAdminAction interface {
 // PathWatcher manages multiple PathWatcherService instances and coordinates file watching and processing.
 type PathWatcherAdmin struct {
 	watchers map[string]*PathWatcherService
-	redisClient *adapter.RedisClientImpl
+	redisClient adapter.RedisOperationalClient
 	StreamProcessorConfig config.StreamProcessorConfig
 }
 
@@ -209,7 +209,7 @@ func (pw *PathWatcherAdmin) DeleteWatchPath(path string) error {
 }
 
 // NewPathWatcher creates a new PathWatcher instance with the provided streamProcessorConfig and redisClient. Initializes the watchers map.
-func NewPathWatcherAdmin(streamProcessorConfig config.StreamProcessorConfig, redisClient *adapter.RedisClientImpl) *PathWatcherAdmin {
+func NewPathWatcherAdmin(streamProcessorConfig config.StreamProcessorConfig, redisClient adapter.RedisOperationalClient) *PathWatcherAdmin {
 	return &PathWatcherAdmin{
 		watchers: make(map[string]*PathWatcherService),
 		redisClient: redisClient,

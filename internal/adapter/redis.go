@@ -93,7 +93,7 @@ func (r *RedisClientImpl) DequeueInProgress(ctx context.Context) (FileName, erro
 }
 
 func (r *RedisClientImpl) DequeueStaleFile(ctx context.Context) (FileName, error) {
-	return r.redisClient.LPop(ctx, QueueInProgress).Result()
+	return r.redisClient.RPop(ctx, QueueInProgress).Result()
 }
 
 func (r *RedisClientImpl) DequeueCompleted(ctx context.Context, key FileName) error {

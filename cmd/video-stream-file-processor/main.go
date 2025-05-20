@@ -21,7 +21,7 @@ import (
 )
 
 // ensureS3Bucket ensures the S3 bucket exists, creating it if it does not. Exits the program on error.
-func ensureS3Bucket(s3Client *adapter.S3ClientImpl, s3Bucket string) {
+func EnsureS3Bucket(s3Client *adapter.S3ClientImpl, s3Bucket string) {
 	exists, err := s3Client.BucketExists(context.Background(), s3Bucket)
 	if err != nil {
 		slog.Error("Failed to check if bucket exists", "err", err)
@@ -44,7 +44,7 @@ func runBackgroundTasks(videoFileProcessorService *service.VideoFileProcessorSer
 	slog.Info("Running background: ProcessPendingQueue")
 	go videoFileProcessorService.ProcessPendingQueue()
 
-	slog.Info("Running background: AddAndWatchPath")
+	slog.Info("Running background: AddAndWatchPath", "path", pathWatcher.StreamProcessorConfig.Path)
 	pathWatcher.AddAndWatchPath(pathWatcher.StreamProcessorConfig)
 
 	slog.Info("Running background: ProcessQueue")
@@ -106,7 +106,7 @@ func main() {
 	clients := config.NewAppClients()
 	
 	// Ensure S3 bucket exists
-	ensureS3Bucket(clients.S3Client, streamProcessorConfig.S3Bucket)
+	EnsureS3Bucket(clients.S3Client, streamProcessorConfig.S3Bucket)
 
 	ctx := context.Background()
 
